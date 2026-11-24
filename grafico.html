@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoramento RS485 · Temperatura e Posição Angular</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    :root {
+      --h: 205;
+      --h-pot: 275;
+      --bg: hsl(var(--h) 45% 94%);
+      --card-temp: hsl(var(--h) 60% 88%);
+      --card-pot: hsl(var(--h-pot) 55% 90%);
+      --ink: hsl(var(--h) 40% 14%);
+      --soft: hsl(var(--h) 20% 38%);
+      --panel: #ffffffcc;
+      --line-temp: hsl(var(--h) 72% 38%);
+      --line-pot: hsl(var(--h-pot) 65% 48%);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: hsl(var(--h) 30% 10%);
+        --card-temp: hsl(var(--h) 35% 20%);
+        --card-pot: hsl(var(--h-pot) 32% 22%);
+        --ink: hsl(var(--h) 40% 94%);
+        --soft: hsl(var(--h) 20% 72%);
+        --panel: #ffffff10;
+        --line-temp: hsl(var(--h) 80% 65%);
+        --line-pot: hsl(var(--h-pot) 80% 72%);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      transition: background .8s;
+      display: flex;
+      justify-content: center;
+      padding: 22px 18px;
+    }
+
+    main { width: 100%; max-width: 1180px; }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    h1 { font-size: 1.35rem; margin: 0; font-weight: 900; }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .9rem;
+      color: var(--soft);
+      font-weight: 700;
+    }
+
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #999; }
+    .dot.on { background: #1fa855; box-shadow: 0 0 0 0 #1fa85588; animation: pulse 2s infinite; }
+    .dot.off { background: #d9534f; }
+
+    @keyframes pulse {
+      70% { box-shadow: 0 0 0 9px #1fa85500; }
+      100% { box-shadow: 0 0 0 0 #1fa85500; }
+    }
+
+    button {
+      font-family: inherit;
+      font-weight: 700;
+      font-size: .9rem;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      background: var(--ink);
+      color: var(--bg);
+      transition: transform .15s, opacity .2s;
+    }
+
+    button:hover { opacity: .9; transform: translateY(-1px); }
+    button.conectado { background: var(--panel); color: var(--ink); }
+
+    .grid-sensores {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .coluna-sensor {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .hero {
+      border-radius: 28px;
+      padding: 26px 20px;
+      text-align: center;
+      transition: background .8s;
+    }
+
+    .hero.temp-card { background: var(--card-temp); }
+
+    .hero.pot-card {
+      background: var(--card-pot);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .hero-tag {
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 900;
+      color: var(--soft);
+      margin: 0 0 8px;
+    }
+
+    .valor-principal {
+      font-size: clamp(3.4rem, 9vw, 5.2rem);
+      font-weight: 900;
+      line-height: 1;
+      margin: 0;
+      letter-spacing: -2px;
+    }
+
+    .valor-principal small {
+      font-size: .45em;
+      font-weight: 700;
+      letter-spacing: 0;
+      margin-left: 4px;
+    }
+
+    .msg { margin: 10px 0 0; font-size: 1.05rem; font-weight: 700; }
+    .when { margin: 4px 0 0; color: var(--soft); font-size: .85rem; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat { background: var(--panel); border-radius: 18px; padding: 12px 8px; text-align: center; }
+    .stat b { display: block; font-size: 1.25rem; font-weight: 900; }
+    .stat span { font-size: .8rem; color: var(--soft); font-weight: 700; }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      gap: 18px;
+    }
+
+    .chart {
+      background: var(--panel);
+      border-radius: 22px;
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .chart h2 { margin: 0 0 10px; font-size: .98rem; font-weight: 900; }
+    .chart div { position: relative; height: 270px; }
+
+    footer {
+      text-align: center;
+      color: var(--soft);
+      font-size: .82rem;
+      font-weight: 700;
+      margin-top: 16px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dot.on { animation: none; }
+      body, .hero { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Monitoramento RS485</h1>
+      <div class="header-actions">
+        <div class="status">
+          <span class="dot" id="dot"></span>
+          <span id="status">Desconectado</span>
+        </div>
+        <button id="btnConectar">Conectar ESP32</button>
+      </div>
+    </header>
+
+    <!-- Cartões superiores lado a lado -->
+    <section class="grid-sensores">
+      <div class="coluna-sensor">
+        <div class="hero temp-card">
+          <p class="hero-tag">Temperatura · DS18B20</p>
+          <p class="valor-principal"><span id="temp">--</span><small>°C</small></p>
+          <p class="msg" id="msgTemp">Aguardando leitura</p>
+          <p class="when" id="whenTemp">Conecte a porta USB do Receptor</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><b id="minTemp">--</b><span>Mínima</span></div>
+          <div class="stat"><b id="avgTemp">--</b><span>Média</span></div>
+          <div class="stat"><b id="maxTemp">--</b><span>Máxima</span></div>
+        </div>
+      </div>
+
+      <div class="coluna-sensor">
+        <div class="hero pot-card">
+          <p class="hero-tag">Posição Angular · Potenciômetro</p>
+          <p class="valor-principal"><span id="pot">--</span><small>°</small></p>
+          <p class="msg" id="msgPot">Aguardando leitura</p>
+          <p class="when" id="whenPot">Curso total: 0° a 270°</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gráficos inferiores lado a lado -->
+    <section class="charts-grid">
+      <div class="chart">
+        <h2>Temperatura (°C) em função do tempo · Últimas 30 leituras</h2>
+        <div><canvas id="graficoTemp"></canvas></div>
+      </div>
+      <div class="chart">
+        <h2>Posição Angular (°) em função do tempo · Últimas 30 leituras</h2>
+        <div><canvas id="graficoPot"></canvas></div>
+      </div>
+    </section>
+
+    <footer id="rodape">DS18B20 · Potenciômetro · ESP32 · RS485 · Pacotes válidos: 0 | Erros: 0</footer>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const MAX_PONTOS = 30;
+    const LIMITE_SEGUNDOS = 5;
+
+    let port = null;
+    let reader = null;
+    let conectado = false;
+    let ultimoTimestamp = null;
+    let pacotesOk = 0;
+    let pacotesErro = 0;
+
+    const historicoLabels = [];
+    const historicoTemp = [];
+    const historicoPot = [];
+
+    function descricaoTemp(t) {
+      if (t < 15) return "Frio";
+      if (t < 22) return "Fresco";
+      if (t < 28) return "Agradável";
+      if (t < 35) return "Quente";
+      return "Muito quente";
+    }
+
+    function descricaoPot(angulo) {
+      const pct = Math.min(100, Math.max(0, Math.round((angulo / 270) * 100)));
+      if (pct <= 10) return `Início do curso (${pct}%)`;
+      if (pct >= 90) return `Fim do curso (${pct}%)`;
+      return `${pct}% do curso total`;
+    }
+
+    function aplicarCorTemperatura(t) {
+      const x = Math.min(1, Math.max(0, (t - 15) / 20)); // 15 °C = azul (210), 35 °C = vermelho (0)
+      document.documentElement.style.setProperty("--h", Math.round(210 - x * 210));
+    }
+
+    function atualizarStatus() {
+      if (!conectado) {
+        $("dot").className = "dot";
+        $("status").textContent = "Desconectado";
+        return;
+      }
+      if (ultimoTimestamp === null) {
+        $("dot").className = "dot on";
+        $("status").textContent = "Aguardando dados…";
+        return;
+      }
+      const seg = Math.max(0, Math.round((Date.now() - ultimoTimestamp) / 1000));
+      const ativo = seg <= LIMITE_SEGUNDOS;
+      $("dot").className = "dot " + (ativo ? "on" : "off");
+      $("status").textContent = ativo ? "Ao vivo" : "Sem dados novos";
+      const hora = new Date(ultimoTimestamp).toLocaleTimeString("pt-BR");
+      $("whenTemp").textContent = "Última leitura às " + hora + (ativo ? "" : ` (há ${seg} s)`);
+    }
+    setInterval(atualizarStatus, 1000);
+
+    function criarGrafico(canvasId, unidadeY, minY = null, maxY = null) {
+      return new Chart($(canvasId), {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: unidadeY,
+            data: [],
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            borderWidth: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              grid: { display: false },
+              title: { display: true, text: "Tempo (horário)", font: { family: "Nunito", weight: "700" } }
+            },
+            y: {
+              min: minY,
+              max: maxY,
+              grace: minY === null ? "10%" : 0,
+              title: { display: true, text: unidadeY, font: { family: "Nunito", weight: "700" } }
+            }
+          }
+        }
+      });
+    }
+
+    const graficoTemp = criarGrafico("graficoTemp", "Temperatura (°C)");
+    const graficoPot = criarGrafico("graficoPot", "Posição Angular (°)", 0, 275);
+
+    function atualizarEstilosGraficos() {
+      const styles = getComputedStyle(document.documentElement);
+      const corTemp = styles.getPropertyValue("--line-temp").trim();
+      const corPot = styles.getPropertyValue("--line-pot").trim();
+      const texto = styles.getPropertyValue("--soft").trim();
+
+      const configs = [
+        { chart: graficoTemp, cor: corTemp },
+        { chart: graficoPot, cor: corPot }
+      ];
+
+      for (const { chart, cor } of configs) {
+        const ds = chart.data.datasets[0];
+        ds.borderColor = cor;
+        ds.pointBackgroundColor = cor;
+        ds.backgroundColor = cor.replace(")", " / 0.15)");
+        chart.options.scales.x.ticks = { color: texto, maxTicksLimit: 5 };
+        chart.options.scales.x.title.color = texto;
+        chart.options.scales.y.ticks = { color: texto };
+        chart.options.scales.y.title.color = cor;
+        chart.update("none");
+      }
+    }
+
+    function atualizarEstatisticas(valores, unidade, idMin, idAvg, idMax) {
+      const min = Math.min(...valores).toFixed(1);
+      const max = Math.max(...valores).toFixed(1);
+      const avg = (valores.reduce((a, b) => a + b, 0) / valores.length).toFixed(1);
+      $(idMin).textContent = `${min} ${unidade}`;
+      $(idAvg).textContent = `${avg} ${unidade}`;
+      $(idMax).textContent = `${max} ${unidade}`;
+    }
+
+    function processarLinha(linha) {
+      if (!linha) return;
+
+      let temp = null;
+      let angulo = null;
+
+      // Formato legível: [RECEPTOR] OK | Temp: 32.00 C | Angulo: 65.5 graus
+      if (linha.startsWith("[RECEPTOR] OK")) {
+        const partes = linha.split("|");
+        if (partes.length >= 3) {
+          temp = parseFloat(partes[1].split(":")[1].replace("C", "").trim());
+          angulo = parseFloat(partes[2].split(":")[1].replace("graus", "").trim());
+        }
+      }
+      // Formato compacto: OK;T:32.00;P:65.5
+      else if (linha.startsWith("OK;")) {
+        const partes = linha.split(";");
+        if (partes.length >= 3) {
+          temp = parseFloat(partes[1].split(":")[1]);
+          angulo = parseFloat(partes[2].split(":")[1]);
+        }
+      } else if (linha.includes("ERR")) {
+        pacotesErro++;
+        $("rodape").textContent = `DS18B20 · Potenciômetro · ESP32 · RS485 · Pacotes válidos: ${pacotesOk} | Erros: ${pacotesErro}`;
+        return;
+      }
+
+      if (temp !== null && !isNaN(temp) && angulo !== null && !isNaN(angulo)) {
+        pacotesOk++;
+        ultimoTimestamp = Date.now();
+        const hora = new Date(ultimoTimestamp).toLocaleTimeString("pt-BR");
+
+        // Atualiza cartões principais
+        $("temp").textContent = temp.toFixed(1);
+        $("msgTemp").textContent = descricaoTemp(temp);
+        aplicarCorTemperatura(temp);
+
+        $("pot").textContent = angulo.toFixed(1);
+        $("msgPot").textContent = descricaoPot(angulo);
+        $("whenPot").textContent = `Leitura analógica convertida (0° a 270°) · ${hora}`;
+
+        // Atualiza histórico limitado a 30 amostras
+        historicoLabels.push(hora);
+        historicoTemp.push(temp);
+        historicoPot.push(angulo);
+
+        if (historicoLabels.length > MAX_PONTOS) {
+          historicoLabels.shift();
+          historicoTemp.shift();
+          historicoPot.shift();
+        }
+
+        atualizarEstatisticas(historicoTemp, "°C", "minTemp", "avgTemp", "maxTemp");
+
+        graficoTemp.data.labels = [...historicoLabels];
+        graficoTemp.data.datasets[0].data = [...historicoTemp];
+
+        graficoPot.data.labels = [...historicoLabels];
+        graficoPot.data.datasets[0].data = [...historicoPot];
+
+        $("rodape").textContent = `DS18B20 · Potenciômetro · ESP32 · RS485 · Pacotes válidos: ${pacotesOk} | Erros: ${pacotesErro}`;
+
+        atualizarStatus();
+        atualizarEstilosGraficos();
+      }
+    }
+
+    async function lerSerial() {
+      const decoder = new TextDecoderStream();
+      const closed = port.readable.pipeTo(decoder.writable);
+      reader = decoder.readable.getReader();
+
+      let buffer = "";
+      try {
+        while (conectado) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            const linhas = buffer.split("\n");
+            buffer = linhas.pop();
+            for (const l of linhas) processarLinha(l.trim());
+          }
+        }
+      } catch (e) {
+        console.error("Leitura serial interrompida:", e);
+      } finally {
+        reader.releaseLock();
+        await closed.catch(() => {});
+      }
+    }
+
+    async function desconectar() {
+      conectado = false;
+      if (reader) await reader.cancel().catch(() => {});
+      if (port) {
+        await port.close().catch(() => {});
+        port = null;
+      }
+      $("btnConectar").textContent = "Conectar ESP32";
+      $("btnConectar").classList.remove("conectado");
+      atualizarStatus();
+    }
+
+    $("btnConectar").addEventListener("click", async () => {
+      if (conectado) {
+        await desconectar();
+        return;
+      }
+      if (!("serial" in navigator)) {
+        alert("Abra este arquivo no Google Chrome ou Microsoft Edge para usar a leitura serial USB.");
+        return;
+      }
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        conectado = true;
+        $("btnConectar").textContent = "Desconectar";
+        $("btnConectar").classList.add("conectado");
+        atualizarStatus();
+        lerSerial();
+      } catch (e) {
+        console.error("Erro ao abrir porta:", e);
+      }
+    });
+
+    atualizarEstilosGraficos();
+  </script>
+</body>
+</html>
