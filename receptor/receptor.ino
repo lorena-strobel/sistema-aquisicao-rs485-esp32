@@ -63,7 +63,7 @@ void processarQuadro(String quadro) {
     return;
   }
 
-  // Envia mensagem pela USB Serial para o terminal e para o Python
+  // Envia mensagem pela USB Serial para o terminal
   Serial.print("[RECEPTOR] OK | Temp: ");
   Serial.print(temperatura, 2);
   Serial.print(" C | Angulo: ");
